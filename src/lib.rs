@@ -4,8 +4,9 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+#[derive(Clone)]
 pub struct ThreadPool {
-    workers: Vec<Worker>,
+    workers: Arc<[Worker]>,
     message_queue: mpsc::Sender<Message>,
     queue_has_message: Arc<Condvar>,
 }
@@ -34,14 +35,15 @@ impl ThreadPool {
         let message_receiver = Arc::new(Mutex::new(message_receiver));
         let queue_has_message = Arc::new(Condvar::new());
 
-        let mut workers = Vec::with_capacity(size.get());
-        for id in 0..size.get() {
-            workers.push(Worker::new(
-                id,
-                Arc::clone(&message_receiver),
-                Arc::clone(&queue_has_message),
-            ))
-        }
+        let workers = (0..size.get())
+            .map(|id| {
+                Worker::new(
+                    id,
+                    Arc::clone(&message_receiver),
+                    Arc::clone(&queue_has_message),
+                )
+            })
+            .collect();
 
         Self {
             workers,
@@ -54,6 +56,10 @@ impl ThreadPool {
         let task = Box::new(task);
         self.message_queue.send(Message::Task(task)).unwrap();
         self.queue_has_message.notify_one();
+    }
+
+    pub fn size(&self) -> usize {
+        self.workers.len()
     }
 }
 
@@ -108,11 +114,15 @@ impl Worker {
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
+        if Arc::strong_count(&self.workers) > 1 {
+            return;
+        }
+
         for _ in 0..self.workers.len() {
             self.message_queue.send(Message::Terminate).unwrap();
             self.queue_has_message.notify_one();
         }
-        for Worker { id, handle } in self.workers.iter_mut() {
+        for Worker { id, handle } in Arc::get_mut(&mut self.workers).unwrap().iter_mut() {
             if let Some(handle) = handle.take() {
                 handle.join().unwrap();
             }

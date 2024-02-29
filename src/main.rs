@@ -8,7 +8,7 @@ fn main() {
     static TOTAL: AtomicUsize = AtomicUsize::new(0);
 
     let start = Instant::now();
-    for _ in 0..120 {
+    for _ in 0..12 {
         let total = &TOTAL;
         pool.run(move || {
             thread::sleep(Duration::from_secs(1));
@@ -16,6 +16,7 @@ fn main() {
         });
     }
 
+    drop(pool.clone());
     drop(pool);
 
     println!("total: {}", TOTAL.load(atomic::Ordering::Relaxed));
