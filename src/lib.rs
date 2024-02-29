@@ -114,15 +114,15 @@ impl Worker {
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.workers) > 1 {
+        let Some(workers) = Arc::get_mut(&mut self.workers) else {
             return;
-        }
+        };
 
-        for _ in 0..self.workers.len() {
+        for _ in 0..workers.len() {
             self.message_queue.send(Message::Terminate).unwrap();
             self.queue_has_message.notify_one();
         }
-        for Worker { id, handle } in Arc::get_mut(&mut self.workers).unwrap().iter_mut() {
+        for Worker { id, handle } in workers.iter_mut() {
             if let Some(handle) = handle.take() {
                 handle.join().unwrap();
             }
